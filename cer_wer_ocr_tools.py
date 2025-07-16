@@ -3,6 +3,7 @@ import Levenshtein
 from jiwer import cer, wer
 import streamlit as st
 
+# ----------------- Chuẩn hóa văn bản -----------------
 def smooth_txt(txt):
     txt = txt.lower()
     alphabet = "0123456789abcdđefghijklmnopqrstuvwxyýỳỷỹỵzáàạảãăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữự"
@@ -23,8 +24,8 @@ def smooth_txt(txt):
         return ""
     return " ".join(list_rs_final).strip()
 
-def calculate_metrics_for_texts(predicted, ground_truth):
-    """Tính CER, WER, Levenshtein distance giữa 2 chuỗi sau chuẩn hóa."""
+# ----------------- Các hàm tính toán -----------------
+def calculate_error_metrics(predicted, ground_truth):
     pred_norm = smooth_txt(predicted)
     truth_norm = smooth_txt(ground_truth)
 
@@ -33,23 +34,37 @@ def calculate_metrics_for_texts(predicted, ground_truth):
     wer_score = wer(truth_norm, pred_norm)
 
     return {
+        "levenshtein": lev_dist,
         "cer": cer_score,
         "wer": wer_score,
-        "levenshtein": lev_dist
+        "pred_norm": pred_norm,
+        "truth_norm": truth_norm
     }
 
+def calculate_accuracy_metrics_raw(predicted, ground_truth):
+    # Không chuẩn hóa: dùng chuỗi gốc
+    total_truth_chars = len(ground_truth)
+    correct_chars = sum(1 for i in range(total_truth_chars) if i < len(predicted) and predicted[i] == ground_truth[i])
+    wrong_chars = total_truth_chars - correct_chars if total_truth_chars > 0 else 0
+    accuracy = correct_chars / total_truth_chars if total_truth_chars > 0 else 0.0
 
-# -------------------- Streamlit App -------------------- #
+    return {
+        "correct": correct_chars,
+        "wrong": wrong_chars,
+        "total_truth": total_truth_chars,
+        "accuracy": accuracy,
+        "pred_raw": predicted,
+        "truth_raw": ground_truth
+    }
 
+# ----------------- Giao diện Streamlit -----------------
 st.set_page_config(page_title="OCR Metrics Tool", page_icon="🧮", layout="centered")
+st.title("📊 OCR Evaluation Tool")
 
-st.title("📊 OCR Metrics Calculator")
-st.markdown("""
-Nhập kết quả OCR và nhãn để tính toán các chỉ số:
-- **CER** (Character Error Rate)  
-- **WER** (Word Error Rate)  
-- **Levenshtein Distance**
-""")
+option = st.radio(
+    "🔧 Chọn chế độ tính toán:",
+    ("Tính CER / WER / Levenshtein", "Tính Accuracy ký tự (KHÔNG chuẩn hóa)")
+)
 
 with st.form("metrics_form"):
     pred_text = st.text_area("📥 Văn bản Dự đoán (OCR output)", height=150)
@@ -60,17 +75,30 @@ if submitted:
     if not pred_text or not truth_text:
         st.warning("⚠️ Vui lòng nhập cả hai chuỗi.")
     else:
-        result = calculate_metrics_for_texts(pred_text, truth_text)
+        if option == "Tính CER / WER / Levenshtein":
+            result = calculate_error_metrics(pred_text, truth_text)
+            st.success("✅ Kết quả đánh giá:")
+            st.metric(label="📌 Levenshtein Distance", value=result["levenshtein"])
+            col1, col2 = st.columns(2)
+            col1.metric("🔠 CER", f"{result['cer']:.4f}")
+            col2.metric("📝 WER", f"{result['wer']:.4f}")
 
-        st.success("✅ Kết quả đánh giá:")
-        st.metric(label="📌 Levenshtein Distance", value=result["levenshtein"])
-        col1, col2 = st.columns(2)
-        col1.metric("🔠 CER", f"{result['cer']:.4f}")
-        col2.metric("📝 WER", f"{result['wer']:.4f}")
+            with st.expander("🔍 Chuẩn hóa văn bản"):
+                st.text(f"Predicted (normalized): {result['pred_norm']}")
+                st.text(f"Ground Truth (normalized): {result['truth_norm']}")
 
-        with st.expander("🔍 Chuẩn hóa văn bản"):
-            st.text(f"Predicted (normalized): {smooth_txt(pred_text)}")
-            st.text(f"Ground Truth (normalized): {smooth_txt(truth_text)}")
+        else:
+            result = calculate_accuracy_metrics_raw(pred_text, truth_text)
+            st.success("✅ Kết quả Accuracy (gốc, không chuẩn hóa):")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("✅ Số ký tự đúng", result["correct"])
+            col2.metric("❌ Số ký tự sai", result["wrong"])
+            col3.metric("🔤 Tổng ký tự nhãn", result["total_truth"])
+            st.metric("🎯 Accuracy (%)", f"{result['accuracy']*100:.2f}%")
+
+            with st.expander("📜 Văn bản gốc"):
+                st.text(f"Predicted (raw): {result['pred_raw']}")
+                st.text(f"Ground Truth (raw): {result['truth_raw']}")
 
 st.markdown("---")
 st.caption("Made with ❤️ using Streamlit.")
